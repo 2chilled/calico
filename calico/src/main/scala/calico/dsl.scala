@@ -212,15 +212,40 @@ object Prop:
       }
 
 final class EventProp[F[_], E] private[calico] (key: String):
-  def -->(sink: Pipe[F, E, INothing]): EventProp.Modified[F, E] = EventProp.Modified(key, sink)
+  def ->(foreach: E => F[Unit]): EventProp.Modified[F, E] = EventProp.Modified(key, foreach)
+  def -->(sink: Pipe[F, E, INothing]): EventProp.ModifiedPipe[F, E] =
+    EventProp.ModifiedPipe(key, sink)
 
 object EventProp:
   final class Modified[F[_], E] private[calico] (
       val key: String,
-      val sink: Pipe[F, E, INothing])
+      val foreach: E => F[Unit]
+  )
 
   given [F[_], E <: dom.Element, V](using F: Async[F]): Modifier[F, E, Modified[F, V]] with
     def modify(prop: Modified[F, V], e: E) = for
+      d <- Dispatcher[F].evalOn(QueueExecutionContext.promises)
+      _ <- Resource.make {
+        F.delay(new dom.AbortController).flatTap { c =>
+          F.delay {
+            e.addEventListener(
+              prop.key,
+              e => d.unsafeRunAndForget(prop.foreach(e.asInstanceOf[V])),
+              new dom.EventListenerOptions {
+                val signal = c.signal
+              }
+            )
+          }
+        }
+      } { c => F.delay(c.abort()) }
+    yield ()
+
+  final class ModifiedPipe[F[_], E] private[calico] (
+      val key: String,
+      val sink: Pipe[F, E, INothing])
+
+  given [F[_], E <: dom.Element, V](using F: Async[F]): Modifier[F, E, ModifiedPipe[F, V]] with
+    def modify(prop: ModifiedPipe[F, V], e: E) = for
       ch <- Resource.make(Channel.unbounded[F, V])(_.close.void)
       d <- Dispatcher[F].evalOn(QueueExecutionContext.promises)
       _ <- Resource.make {
@@ -229,7 +254,9 @@ object EventProp:
             e.addEventListener(
               prop.key,
               e => d.unsafeRunAndForget(ch.send(e.asInstanceOf[V])),
-              js.Dynamic.literal(signal = c.signal).asInstanceOf[dom.EventListenerOptions]
+              new dom.EventListenerOptions {
+                val signal = c.signal
+              }
             )
           }
         }
