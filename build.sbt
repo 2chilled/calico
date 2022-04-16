@@ -9,7 +9,7 @@ ThisBuild / developers := List(
 ThisBuild / tlSonatypeUseLegacyHost := false
 ThisBuild / tlUntaggedAreSnapshots := false
 
-ThisBuild / crossScalaVersions := Seq("3.1.2")
+ThisBuild / crossScalaVersions := Seq("3.2.0-RC1-bin-20220414-ba45d46-NIGHTLY")
 ThisBuild / scalacOptions ++= Seq("-new-syntax", "-indent", "-source:future")
 
 lazy val root = tlCrossRootProject.aggregate(calico, widget, example, todoMvc)

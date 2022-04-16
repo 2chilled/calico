@@ -110,8 +110,8 @@ trait HtmlBuilders[F[_]](using F: Async[F])
 
   def children[E <: dom.Element]: Children[F, E] = Children[F, E]
 
-  def children[K, E <: dom.Element](f: K => Resource[F, E]): KeyedChildren[F, K, E] =
-    KeyedChildren[F, K, E](f)
+  // def children[K, E <: dom.Element](f: K => Resource[F, E]): KeyedChildren[F, K, E] =
+  //   KeyedChildren[F, K, E](f)
 
 type HtmlTagT[F[_]] = [E <: dom.HTMLElement] =>> HtmlTag[F, E]
 final class HtmlTag[F[_], E <: dom.HTMLElement] private[calico] (name: String, void: Boolean)(
