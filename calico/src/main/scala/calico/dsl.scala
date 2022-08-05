@@ -117,15 +117,14 @@ type HtmlTagT[F[_]] = [E <: dom.HTMLElement] =>> HtmlTag[F, E]
 final class HtmlTag[F[_], E <: dom.HTMLElement] private[calico] (name: String, void: Boolean)(
     using F: Async[F]):
 
-  def apply[M](modifier: M)(using Modifier[F, E, M]): Resource[F, E] =
-    apply(Tuple1(modifier))
+  // def apply[M](modifier: M)(using Modifier[F, E, M]): Resource[F, E] =
+  //   apply(Tuple1(modifier))
 
   def apply[M](mkModifier: E => M)(using Modifier[F, E, M]): Resource[F, E] =
     apply(e => Tuple1(mkModifier(e)))
 
   def apply[M <: Tuple](modifiers: M)(
-      using K0.ProductInstances[Modifier[F, E, _], M]): Resource[F, E] =
-    apply(_ => modifiers)
+      using K0.ProductInstances[Modifier[F, E, _], M]): Unit = ???
 
   def apply[M <: Tuple](mkModifiers: E => M)(
       using inst: K0.ProductInstances[Modifier[F, E, _], M]): Resource[F, E] =

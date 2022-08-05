@@ -16,56 +16,29 @@
 
 package calico
 
-import calico.dsl.io.*
-import calico.router.*
-import calico.std.*
-import calico.syntax.*
-import cats.effect.*
-import cats.effect.syntax.all.*
-import cats.syntax.all.*
-import fs2.*
-import fs2.concurrent.*
-import monocle.macros.GenLens
-import org.http4s.Uri
-import org.http4s.syntax.all.*
+import shapeless3.deriving.K0
 
-object Example extends IOWebApp:
+trait Functor[F[_]]:
+  extension [A](fa: F[A])
+    def map[B](f: A => B): F[B] = ???
 
-  def render = History.make[IO, Unit].flatMap { history =>
+trait IO[A]
+trait Signal[F[_], A]
 
-    def helloUri(who: String) =
-      uri"/hello" +? ("who" -> who)
+object Signal:
+  given [F[_]]: Functor[Signal[F, _]] = ???
 
-    def countUri(n: Int) =
-      uri"/count" +? ("n" -> n)
+trait Modifier[F[_], E, A]
+object Modifier:
+  given [F[_], E]: Modifier[F, E, String] = ???
+  given [F[_], E]: Modifier[F, E, Signal[F, Int]] = ???
 
-    val routes = Router(history) { router =>
+def foo[F[_], E, M <: Tuple](modifiers: M)(
+    using K0.ProductInstances[Modifier[F, E, _], M]): Unit = ???
 
-      val helloRoute = Routes.one[IO] {
-        case uri if uri.path == path"/hello" =>
-          uri.query.params.getOrElse("who", "world")
-      } { who => div("Hello ", who) }
-
-      val countRoute = Routes.one[IO] {
-        case uri if uri.path == path"/count" =>
-          uri.query.params.get("n").flatMap(_.toIntOption).getOrElse(0)
-      } { n =>
-        p(
-          "Count: ",
-          n.map(_.toString),
-          button("+", onClick --> (_.foreach(_ => n.get.map(countUri).flatMap(router.push))))
-        )
-      }
-
-      (helloRoute |+| countRoute).toResource
-    }
-
-    // div(
-    //   ul(
-    //     li(a(onClick --> (_.foreach(_ => router.push(helloUri("Shaun"))))))
-    //   ),
-    //   routes
-    // )
-
-    routes
-  }
+@main def main =
+  val n: Signal[IO, Int] = ???
+  foo(
+    "Count: ",
+    n.map(_.toString),
+  )
