@@ -45,8 +45,7 @@ extension [F[_]](component: Resource[F, dom.Node])
     }
 
 extension [F[_], A](sigA: Signal[F, A])
-  def mapCache[B](f: A => B)(using F: Concurrent[F]): Resource[F, Signal[F, B]] =
-    given Eq[B] = (x, y) => x.asInstanceOf[js.Any] eq y.asInstanceOf[js.Any]
+  def mapCache[B: Eq](f: A => B)(using F: Concurrent[F]): Resource[F, Signal[F, B]] =
     sigA.get.flatMap(a => SignallingRef[F].of(f(a))).toResource.flatTap { sigB =>
       sigA.discrete.map(f).changes.foreach(sigB.set).compile.drain.background
     }
