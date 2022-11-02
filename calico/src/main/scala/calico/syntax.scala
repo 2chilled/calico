@@ -44,6 +44,11 @@ extension [F[_]](component: Resource[F, dom.Node])
       Resource.make(F.delay(root.appendChild(e)))(_ => F.delay(root.removeChild(e))).void
     }
 
+extension [F[_], A](fa: F[A])
+  def cedeBackground(using F: Async[F]) = F.executionContext.toResource.flatMap { ec =>
+    fa.evalOn(ec).backgroundOn(unsafe.MacrotaskExecutor)
+  }
+
 extension [F[_], A](sigRef: SignallingRef[F, A])
   def zoom[B <: AnyRef](lens: Lens[A, B])(using Sync[F]): SignallingRef[F, B] =
     val ref = Ref.lens[F, A, B](sigRef)(lens.get(_), a => b => lens.replace(b)(a))
