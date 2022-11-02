@@ -20,7 +20,9 @@ package syntax
 import cats.data.State
 import cats.effect.kernel.Async
 import cats.effect.kernel.Concurrent
+import cats.effect.kernel.Fiber
 import cats.effect.kernel.MonadCancel
+import cats.effect.kernel.Outcome
 import cats.effect.kernel.Ref
 import cats.effect.kernel.Resource
 import cats.effect.kernel.Sync
@@ -30,9 +32,9 @@ import cats.syntax.all.*
 import fs2.Pipe
 import fs2.Stream
 import fs2.concurrent.Channel
-import fs2.concurrent.Topic
 import fs2.concurrent.Signal
 import fs2.concurrent.SignallingRef
+import fs2.concurrent.Topic
 import monocle.Lens
 import org.scalajs.dom
 
@@ -45,9 +47,15 @@ extension [F[_]](component: Resource[F, dom.Node])
     }
 
 extension [F[_], A](fa: F[A])
-  def cedeBackground(using F: Async[F]) = F.executionContext.toResource.flatMap { ec =>
-    fa.evalOn(ec).backgroundOn(unsafe.MacrotaskExecutor)
-  }
+  def cedeBackground(using F: Async[F]): Resource[F, F[Outcome[F, Throwable, A]]] =
+    F.executionContext.toResource.flatMap { ec =>
+      Resource
+        .make(F.deferred[Fiber[F, Throwable, A]])(_.get.flatMap(_.cancel))
+        .evalTap { deferred =>
+          fa.startOn(ec).flatMap(deferred.complete(_)).startOn(unsafe.MacrotaskExecutor).start
+        }
+        .map(_.get.flatMap(_.join))
+    }
 
 extension [F[_], A](sigRef: SignallingRef[F, A])
   def zoom[B <: AnyRef](lens: Lens[A, B])(using Sync[F]): SignallingRef[F, B] =
