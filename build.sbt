@@ -48,7 +48,7 @@ lazy val calico = project
   .settings(
     name := "calico",
     libraryDependencies ++= Seq(
-      "co.fs2" %%% "fs2-core" % "3.3.0-109-c96efc3-SNAPSHOT",
+      "co.fs2" %%% "fs2-core" % "3.3.0-110-4a07956-SNAPSHOT",
       "com.armanbilge" %%% "fs2-dom" % Fs2DomVersion,
       "org.typelevel" %%% "shapeless3-deriving" % "3.2.0",
       "dev.optics" %%% "monocle-core" % MonocleVersion,

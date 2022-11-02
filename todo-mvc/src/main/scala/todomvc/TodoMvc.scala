@@ -53,8 +53,9 @@ object TodoMvc extends IOWebApp:
               cls := "main",
               ul(
                 cls := "todo-list",
-                children[Long](id => TodoItem(store.entry(id))) <--
-                  filter.flatMap(store.ids(_)).discrete.changes.holdResource(Nil)
+                filter.flatMap(store.ids(_)).discrete.changes.holdResource(Nil).map {
+                  children[Long](id => TodoItem(store.entry(id))) <-- _
+                }
               )
             ),
             store
