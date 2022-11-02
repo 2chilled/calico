@@ -17,6 +17,7 @@
 package calico
 package syntax
 
+import cats.Functor
 import cats.data.State
 import cats.effect.kernel.Async
 import cats.effect.kernel.Concurrent
@@ -61,6 +62,15 @@ extension [F[_], A](fa: F[A])
         .map(_.get.flatMap(_.join))
     }
 
+extension [F[_], A](signal: Signal[F, A])
+  def changes[A2 >: A: Eq](using F: Functor[F]): Signal[F, A2] =
+    new:
+      def continuous = signal.continuous
+      def discrete = signal.discrete.changes
+      def get = signal.get.widen
+      override def getAndUpdates(using Functor[F]) =
+        signal.getAndUpdates.map { (head, tail) => (head, tail.changes) }
+
 extension [F[_], A](sigRef: SignallingRef[F, A])
   def zoom[B <: AnyRef](lens: Lens[A, B])(using Sync[F]): SignallingRef[F, B] =
     val ref = Ref.lens[F, A, B](sigRef)(lens.get(_), a => b => lens.replace(b)(a))
@@ -76,7 +86,6 @@ extension [F[_], A](sigRef: SignallingRef[F, A])
       def get = ref.get
       def continuous = sigRef.map(lens.get).continuous
       def discrete = sigRef.map(lens.get).discrete
-      def getAndUpdates = ???
 
 extension [F[_], A](stream: Stream[F, A])
   @deprecated("This is not a valid signal; use Stream#holdOptionResource instead", "0.1.1")
@@ -88,7 +97,6 @@ extension [F[_], A](stream: Stream[F, A])
       def continuous = sig.continuous.unNone
       def discrete = sig.discrete.unNone
       def get = discrete.head.compile.lastOrError
-      def getAndUpdates = ???
 
 extension [F[_], A, B](pipe: Pipe[F, A, B])
   def channel(using F: Concurrent[F]): Resource[F, Channel[F, A]] =
