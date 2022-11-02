@@ -40,12 +40,15 @@ lazy val frp = crossProject(JVMPlatform, JSPlatform)
     )
   )
 
+ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
+
 lazy val calico = project
   .in(file("calico"))
   .enablePlugins(ScalaJSPlugin)
   .settings(
     name := "calico",
     libraryDependencies ++= Seq(
+      "co.fs2" %%% "fs2-core" % "3.3.0-104-aec9964-SNAPSHOT",
       "com.armanbilge" %%% "fs2-dom" % Fs2DomVersion,
       "org.typelevel" %%% "shapeless3-deriving" % "3.2.0",
       "dev.optics" %%% "monocle-core" % MonocleVersion,
