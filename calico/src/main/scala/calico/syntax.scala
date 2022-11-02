@@ -52,7 +52,11 @@ extension [F[_], A](fa: F[A])
       Resource
         .make(F.deferred[Fiber[F, Throwable, A]])(_.get.flatMap(_.cancel))
         .evalTap { deferred =>
-          fa.startOn(ec).flatMap(deferred.complete(_)).startOn(unsafe.MacrotaskExecutor).start
+          fa.start
+            .flatMap(deferred.complete(_))
+            .evalOn(ec)
+            .startOn(unsafe.MacrotaskExecutor)
+            .start
         }
         .map(_.get.flatMap(_.join))
     }
