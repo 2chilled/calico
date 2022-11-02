@@ -24,8 +24,10 @@ import cats.Hash
 import cats.Monad
 import cats.effect.IO
 import cats.effect.kernel.Async
+import cats.effect.kernel.Concurrent
 import cats.effect.kernel.Ref
 import cats.effect.kernel.Resource
+import cats.effect.kernel.Spawn
 import cats.effect.kernel.Sync
 import cats.effect.std.Dispatcher
 import cats.effect.syntax.all.*
@@ -51,6 +53,7 @@ import shapeless3.deriving.K0
 
 import scala.collection.mutable
 import scala.scalajs.js
+import scala.annotation.nowarn
 
 object io extends Dsl[IO]
 
@@ -144,6 +147,7 @@ trait Modifier[F[_], E, A]:
   final def contramap[B](f: B => A): Modifier[F, E, B] =
     (b: B, e: E) => outer.modify(f(b), e)
 
+@nowarn("cat=deprecation")
 object Modifier:
   given forUnit[F[_], E]: Modifier[F, E, Unit] with
     def modify(unit: Unit, e: E) = Resource.unit
@@ -151,6 +155,7 @@ object Modifier:
   given forString[F[_], E <: dom.Node](using F: Async[F]): Modifier[F, E, String] =
     forStringStream.contramap(Stream.emit(_))
 
+  @deprecated
   given forStringStream[F[_], E <: dom.Node](
       using F: Async[F]): Modifier[F, E, Stream[F, String]] with
     def modify(s: Stream[F, String], e: E) = for
@@ -161,6 +166,7 @@ object Modifier:
       _ <- s.foreach(t => F.delay(n.textContent = t)).compile.drain.background
     yield ()
 
+  @deprecated
   given forOptionStringStream[F[_], E <: dom.Node](
       using F: Async[F]): Modifier[F, E, Stream[F, Option[String]]] with
     def modify(s: Stream[F, Option[String]], e: E) = for
@@ -188,10 +194,12 @@ object Modifier:
     def modify(e2: Resource[F, E2], e: E) =
       e2.evalMap(e2 => F.delay(e.appendChild(e2)))
 
+  @deprecated
   given forElementStream[F[_], E <: dom.Node, E2 <: dom.Node](
       using F: Async[F]): Modifier[F, E, Stream[F, Resource[F, E2]]] =
     forOptionElementStream.contramap(_.map(Some(_)))
 
+  @deprecated
   given forOptionElementStream[F[_], E <: dom.Node, E2 <: dom.Node](
       using F: Async[F]): Modifier[F, E, Stream[F, Option[Resource[F, E2]]]] with
     def modify(e2s: Stream[F, Option[Resource[F, E2]]], e: E) =
@@ -209,64 +217,72 @@ object Modifier:
       yield ()
 
 final class HtmlAttr[F[_], V] private[calico] (key: String, codec: Codec[V, String]):
-  def :=(v: V): HtmlAttr.Modified[F, V] =
-    this <-- Stream.emit(v)
+  def :=(v: V)(using Spawn[F]): HtmlAttr.Modified[F, V] =
+    this <-- Signal.constant(v)
 
   def <--(vs: Signal[F, V]): HtmlAttr.Modified[F, V] =
-    this <-- vs.discrete
-
-  def <--(vs: Stream[F, V]): HtmlAttr.Modified[F, V] =
     this <-- Resource.pure(vs)
 
-  def <--(vs: Resource[F, Stream[F, V]]): HtmlAttr.Modified[F, V] =
+  private def <--(vs: Resource[F, Signal[F, V]]): HtmlAttr.Modified[F, V] =
     HtmlAttr.Modified(key, codec, vs)
+
+  @deprecated
+  def <--(vs: Stream[F, V])(using Concurrent[F]): HtmlAttr.Modified[F, V] =
+    this <-- vs.hold1Resource
+
+  @deprecated
+  def <--(vs: Resource[F, Stream[F, V]])(using Concurrent[F]): HtmlAttr.Modified[F, V] =
+    this <-- vs.flatMap(_.hold1Resource)
 
 object HtmlAttr:
   final class Modified[F[_], V] private[HtmlAttr] (
       val key: String,
       val codec: Codec[V, String],
-      val values: Resource[F, Stream[F, V]]
+      val values: Resource[F, Signal[F, V]]
   )
 
   given [F[_], E <: dom.Element, V](using F: Async[F]): Modifier[F, E, Modified[F, V]] with
     def modify(attr: Modified[F, V], e: E) =
       attr.values.flatMap { vs =>
-        vs.foreach(v => F.delay(e.setAttribute(attr.key, attr.codec.encode(v))))
-          .compile
-          .drain
-          .background
-          .void
+        def setAttr(v: V) = F.delay(e.setAttribute(attr.key, attr.codec.encode(v)))
+        Resource.eval(vs.getAndUpdates.flatTap((v, _) => setAttr(v))).flatMap { (_, vs) =>
+          vs.foreach(setAttr(_)).compile.drain.cedeBackground.void
+        }
       }
 
 sealed class Prop[F[_], V, J] private[calico] (name: String, codec: Codec[V, J]):
-  def :=(v: V): Prop.Modified[F, V, J] =
-    this <-- Stream.emit(v)
+  def :=(v: V)(using Spawn[F]): Prop.Modified[F, V, J] =
+    this <-- Signal.constant(v)
 
   def <--(vs: Signal[F, V]): Prop.Modified[F, V, J] =
-    this <-- vs.discrete
-
-  def <--(vs: Stream[F, V]): Prop.Modified[F, V, J] =
     this <-- Resource.pure(vs)
 
-  def <--(vs: Resource[F, Stream[F, V]]): Prop.Modified[F, V, J] =
+  private def <--(vs: Resource[F, Signal[F, V]]): Prop.Modified[F, V, J] =
     Prop.Modified(name, codec, vs)
+
+  @deprecated
+  def <--(vs: Stream[F, V])(using Concurrent[F]): Prop.Modified[F, V, J] =
+    this <-- vs.hold1Resource
+
+  @deprecated
+  def <--(vs: Resource[F, Stream[F, V]])(using Concurrent[F]): Prop.Modified[F, V, J] =
+    this <-- vs.flatMap(_.hold1Resource)
 
 object Prop:
   final class Modified[F[_], V, J] private[Prop] (
       val name: String,
       val codec: Codec[V, J],
-      val values: Resource[F, Stream[F, V]]
+      val values: Resource[F, Signal[F, V]]
   )
 
   given [F[_], E, V, J](using F: Async[F]): Modifier[F, E, Modified[F, V, J]] with
     def modify(prop: Modified[F, V, J], e: E) =
       prop.values.flatMap { vs =>
-        vs.foreach { v =>
+        def setProp(v: V) =
           F.delay(e.asInstanceOf[js.Dictionary[J]](prop.name) = prop.codec.encode(v))
-        }.compile
-          .drain
-          .background
-          .void
+        Resource.eval(vs.getAndUpdates.flatTap((v, _) => setProp(v))).flatMap { (_, vs) =>
+          vs.foreach(setProp(_)).compile.drain.cedeBackground.void
+        }
       }
 
 final class EventProp[F[_], E] private[calico] (key: String):
@@ -277,7 +293,7 @@ object EventProp:
 
   given [F[_], E <: dom.EventTarget, V](using F: Async[F]): Modifier[F, E, Modified[F, V]] with
     def modify(prop: Modified[F, V], e: E) =
-      fs2.dom.events(e, prop.key).through(prop.sink).compile.drain.background.void
+      fs2.dom.events(e, prop.key).through(prop.sink).compile.drain.cedeBackground.void
 
 final class ClassAttr[F[_]] private[calico]
     extends Prop[F, List[String], String](
@@ -287,24 +303,30 @@ final class ClassAttr[F[_]] private[calico]
         def encode(scalaValue: List[String]) = scalaValue.mkString(" ")
     ):
 
-  def :=(cls: String): Prop.Modified[F, List[String], String] =
+  def :=(cls: String)(using Spawn[F]): Prop.Modified[F, List[String], String] =
     this := List(cls)
 
 final class Children[F[_]] private[calico]:
   def <--(cs: Signal[F, List[Resource[F, dom.Node]]])(using Monad[F]): Children.Modified[F] =
-    this <-- cs.discrete
+    this <-- cs.map(_.sequence)
 
-  def <--(cs: Stream[F, List[Resource[F, dom.Node]]])(using Monad[F]): Children.Modified[F] =
+  @deprecated
+  def <--(cs: Stream[F, List[Resource[F, dom.Node]]])(
+      using Concurrent[F]): Children.Modified[F] =
     this <-- cs.map(_.sequence)
 
   def <--(cs: Signal[F, Resource[F, List[dom.Node]]]): Children.Modified[F] =
-    this <-- cs.discrete
+    Children.Modified(Resource.pure(cs))
 
-  def <--(cs: Stream[F, Resource[F, List[dom.Node]]]): Children.Modified[F] =
-    Children.Modified(cs)
+  @deprecated
+  def <--(cs: Stream[F, Resource[F, List[dom.Node]]])(
+      using Concurrent[F],
+      DummyImplicit): Children.Modified[F] =
+    Children.Modified(cs.hold1Resource)
 
 object Children:
-  final class Modified[F[_]] private[calico] (val cs: Stream[F, Resource[F, List[dom.Node]]])
+  final class Modified[F[_]] private[calico] (
+      val cs: Resource[F, Signal[F, Resource[F, List[dom.Node]]]])
 
   given [F[_], E <: dom.Element](using F: Async[F]): Modifier[F, E, Modified[F]] with
     def modify(children: Modified[F], e: E) =
@@ -313,33 +335,32 @@ object Children:
         placeholder <- Resource.eval(
           F.delay(e.appendChild(dom.document.createComment("")))
         )
-        _ <- children
-          .cs
-          .foreach { children =>
+        _ <- children.cs.evalMap(_.getAndUpdates).flatMap { (head, tail) =>
+          def install(children: Resource[F, List[dom.Node]]) =
             hs.swap(children) { (prev, next) =>
               F.delay {
                 prev.foreach(e.removeChild)
                 next.foreach(e.insertBefore(_, placeholder))
               }
             }
-          }
-          .compile
-          .drain
-          .background
-          .void
+
+          Resource.eval(install(head)) *>
+            tail.foreach(install(_)).compile.drain.cedeBackground
+        }
       yield ()
 
 final class KeyedChildren[F[_], K] private[calico] (f: K => Resource[F, dom.Node]):
   def <--(ks: Signal[F, List[K]]): KeyedChildren.Modified[F, K] =
-    this <-- ks.discrete
+    KeyedChildren.Modified(f, Resource.pure(ks))
 
-  def <--(ks: Stream[F, List[K]]): KeyedChildren.Modified[F, K] =
-    KeyedChildren.Modified(f, ks)
+  @deprecated
+  def <--(ks: Stream[F, List[K]])(using Concurrent[F]): KeyedChildren.Modified[F, K] =
+    KeyedChildren.Modified(f, ks.hold1Resource)
 
 object KeyedChildren:
   final class Modified[F[_], K] private[calico] (
       val f: K => Resource[F, dom.Node],
-      val ks: Stream[F, List[K]])
+      val ks: Resource[F, Signal[F, List[K]]])
 
   given [F[_], E <: dom.Element, K: Hash](using F: Async[F]): Modifier[F, E, Modified[F, K]]
     with
@@ -348,36 +369,35 @@ object KeyedChildren:
         active <- Resource.make(Ref[F].of(mutable.Map.empty[K, (dom.Node, F[Unit])]))(
           _.get.flatMap(_.values.toList.traverse_(_._2))
         )
-        _ <- children
-          .ks
-          .foreach { ks =>
-            active.get.flatMap { currentNodes =>
-              F.uncancelable { poll =>
-                F.delay {
-                  val nextNodes = mutable.Map[K, (dom.Node, F[Unit])]()
-                  val newNodes = List.newBuilder[K]
-                  ks.foreach { k =>
-                    currentNodes.remove(k) match
-                      case Some(v) => nextNodes += (k -> v)
-                      case None => newNodes += k
-                  }
+        _ <- children.ks.evalMap(_.getAndUpdates).flatMap { (head, tail) =>
 
-                  val releaseOldNodes = currentNodes.values.toList.traverse_(_._2)
+          def update(ks: List[K]) = active.get.flatMap { currentNodes =>
+            F.uncancelable { poll =>
+              F.delay {
+                val nextNodes = mutable.Map[K, (dom.Node, F[Unit])]()
+                val newNodes = List.newBuilder[K]
+                ks.foreach { k =>
+                  currentNodes.remove(k) match
+                    case Some(v) => nextNodes += (k -> v)
+                    case None => newNodes += k
+                }
 
-                  val acquireNewNodes = newNodes.result().traverse_ { k =>
-                    poll(children.f(k).allocated).flatMap(x => F.delay(nextNodes += k -> x))
-                  }
+                val releaseOldNodes = currentNodes.values.toList.traverse_(_._2)
 
-                  val renderNextNodes = F.delay(e.replaceChildren(ks.map(nextNodes(_)._1)*))
+                val acquireNewNodes = newNodes.result().traverse_ { k =>
+                  poll(children.f(k).allocated).flatMap(x => F.delay(nextNodes += k -> x))
+                }
 
-                  (active.set(nextNodes) *>
-                    acquireNewNodes *>
-                    renderNextNodes).guarantee(releaseOldNodes.evalOn(unsafe.MacrotaskExecutor))
-                }.flatten
-              }
+                val renderNextNodes = F.delay(e.replaceChildren(ks.map(nextNodes(_)._1)*))
+
+                (active.set(nextNodes) *>
+                  acquireNewNodes *>
+                  renderNextNodes).guarantee(releaseOldNodes.evalOn(unsafe.MacrotaskExecutor))
+              }.flatten
             }
           }
-          .compile
-          .drain
-          .background
+
+          Resource.eval(update(head)) *>
+            tail.foreach(update(_)).compile.drain.cedeBackground
+        }
       yield ()
