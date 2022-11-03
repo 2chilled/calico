@@ -376,7 +376,7 @@ object KeyedChildren:
             def traverse_[A, U](it: Iterable[A])(f: A => F[U]): F[Unit] =
               it.foldLeft(F.unit)(_ <* f(_))
 
-            val releaseOldNodes = traverse_(currentNodes.values)(_._2)
+            val releaseOldNodes = F.delay(currentNodes.values).flatMap(traverse_(_)(_._2))
 
             F.delay((mutable.Map.empty[K, (dom.Node, F[Unit])], new js.Array[dom.Node]))
               .flatMap { (nextNodes, nextChildren) =>
