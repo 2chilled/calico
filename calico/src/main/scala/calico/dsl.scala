@@ -372,29 +372,41 @@ object KeyedChildren:
         _ <- children.ks.evalMap(_.getAndUpdates).flatMap { (head, tail) =>
 
           def update(ks: List[K]) = active.get.flatMap { currentNodes =>
-            F.uncancelable { poll =>
-              F.delay {
-                val nextNodes = mutable.Map[K, (dom.Node, F[Unit])]()
-                val newNodes = List.newBuilder[K]
-                ks.foreach { k =>
-                  currentNodes.remove(k) match
-                    case Some(v) => nextNodes += (k -> v)
-                    case None => newNodes += k
-                }
 
-                val releaseOldNodes = currentNodes.values.toList.traverse_(_._2)
+            def traverse_[A, U](it: Iterable[A])(f: A => F[U]): F[Unit] =
+              it.foldLeft(F.unit)(_ <* f(_))
 
-                val acquireNewNodes = newNodes.result().traverse_ { k =>
-                  poll(children.f(k).allocated).flatMap(x => F.delay(nextNodes += k -> x))
-                }
+            val releaseOldNodes = traverse_(currentNodes.values)(_._2)
 
-                val renderNextNodes = F.delay(e.replaceChildren(ks.map(nextNodes(_)._1)*))
-
-                (active.set(nextNodes) *>
-                  acquireNewNodes *>
-                  renderNextNodes).guarantee(releaseOldNodes.evalOn(unsafe.MacrotaskExecutor))
-              }.flatten
-            }
+            F.delay((mutable.Map.empty[K, (dom.Node, F[Unit])], new js.Array[dom.Node]))
+              .flatMap { (nextNodes, nextChildren) =>
+                active
+                  .set(nextNodes)
+                  .bracket { _ =>
+                    traverse_(ks) { k =>
+                      F.delay(currentNodes.remove(k)).flatMap { v =>
+                        v.fold {
+                          F.uncancelable { poll =>
+                            poll(children.f(k).allocated).flatMap { v =>
+                              F.delay {
+                                nextNodes += k -> v
+                                nextChildren.push(v._1)
+                              }
+                            }
+                          }
+                        } { v =>
+                          F.delay {
+                            nextNodes += (k -> v)
+                            nextChildren.push(v._1)
+                          }
+                        }
+                      }
+                    } *> F.delay {
+                      import scala.scalajs.runtime.*
+                      e.replaceChildren(toScalaVarArgs(nextChildren)*)
+                    }
+                  }(_ => releaseOldNodes.evalOn(unsafe.MacrotaskExecutor))
+              }
           }
 
           Resource.eval(update(head)) *>
