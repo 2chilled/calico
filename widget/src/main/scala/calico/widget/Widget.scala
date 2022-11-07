@@ -23,10 +23,10 @@ import cats.data.OptionT
 import cats.effect.kernel.Async
 import cats.effect.kernel.Resource
 import cats.syntax.all.*
-import fs2.Pipe
-import fs2.Stream
 import fs2.concurrent.Signal
 import fs2.concurrent.SignallingRef
+import fs2.Pipe
+import fs2.Stream
 import org.scalajs.dom
 import shapeless3.deriving.K0
 import shapeless3.deriving.Labelling

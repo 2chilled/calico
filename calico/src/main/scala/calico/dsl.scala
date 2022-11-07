@@ -19,9 +19,6 @@ package dsl
 
 import calico.syntax.*
 import calico.util.DomHotswap
-import cats.Foldable
-import cats.Hash
-import cats.Monad
 import cats.effect.IO
 import cats.effect.kernel.Async
 import cats.effect.kernel.Ref
@@ -29,6 +26,9 @@ import cats.effect.kernel.Resource
 import cats.effect.kernel.Sync
 import cats.effect.std.Dispatcher
 import cats.effect.syntax.all.*
+import cats.Foldable
+import cats.Hash
+import cats.Monad
 import cats.syntax.all.*
 import com.raquo.domtypes.generic.builders.EventPropBuilder
 import com.raquo.domtypes.generic.builders.HtmlAttrBuilder
@@ -42,20 +42,24 @@ import com.raquo.domtypes.generic.defs.props.*
 import com.raquo.domtypes.generic.defs.reflectedAttrs.*
 import com.raquo.domtypes.jsdom.defs.eventProps.*
 import com.raquo.domtypes.jsdom.defs.tags.*
-import fs2.Pipe
-import fs2.Stream
 import fs2.concurrent.Channel
 import fs2.concurrent.Signal
+import fs2.Pipe
+import fs2.Stream
 import org.scalajs.dom
 import shapeless3.deriving.K0
 
 import scala.collection.mutable
 import scala.scalajs.js
 
-object io extends Dsl[IO]
+val io = Dsl[IO]
 
 object Dsl:
-  def apply[F[_]: Async]: Dsl[F] = new Dsl[F] {}
+  def apply[F[_]](using ev: Dsl[F]) = ev
+
+  given forAsync[E, F[_]: Async]: Dsl[F] with
+    protected def htmlTag[E <: dom.HTMLElement](tagName: String, void: Boolean) =
+      HtmlTag(tagName, void)
 
 trait Dsl[F[_]]
     extends HtmlBuilders[F],
@@ -79,15 +83,12 @@ trait Dsl[F[_]]
       MouseEventProps[EventProp[F, _]],
       PointerEventProps[EventProp[F, _]]
 
-trait HtmlBuilders[F[_]](using F: Async[F])
+trait HtmlBuilders[F[_]]
     extends HtmlTagBuilder[HtmlTagT[F], dom.HTMLElement],
       HtmlAttrBuilder[HtmlAttr[F, _]],
       ReflectedHtmlAttrBuilder[Prop[F, _, _]],
       PropBuilder[Prop[F, _, _]],
       EventPropBuilder[EventProp[F, _], dom.Event]:
-
-  protected def htmlTag[E <: dom.HTMLElement](tagName: String, void: Boolean) =
-    HtmlTag(tagName, void)
 
   protected def htmlAttr[V](key: String, codec: Codec[V, String]) =
     HtmlAttr(key, codec)
